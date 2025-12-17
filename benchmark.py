@@ -1,84 +1,114 @@
 #!/usr/bin/env python3
 """Benchmark script for multi_view_composer.
 
-Generates temporary sample images for testing and cleans them up afterward.
+Uses synthetic images in memory - no disk I/O required.
 """
 
-import os
 import time
-import cv2
 import argparse
+import random
+import cv2
+import numpy as np
 
-from multi_view_composer import generate_sample_images, cleanup_sample_images
+from multi_view_composer import MultiViewComposer, load_config
 
 
-def run_benchmark(num_frames=50, show_display=False):
+def create_synthetic_image(height: int, width: int, color: tuple, label: str) -> np.ndarray:
+    """Create a synthetic colored image with a label."""
+    img = np.full((height, width, 3), color, dtype=np.uint8)
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    text_size = cv2.getTextSize(label, font, 1.0, 2)[0]
+    text_x = (width - text_size[0]) // 2
+    text_y = (height + text_size[1]) // 2
+    cv2.putText(img, label, (text_x, text_y), font, 1.0, (255, 255, 255), 2, cv2.LINE_AA)
+    return img
+
+
+def run_benchmark(num_frames: int = 50, config_path: str = "config.yaml"):
     print("=" * 70)
     print("MULTI-VIEW COMPOSER BENCHMARK")
     print("=" * 70)
 
-    # Get script directory for generating sample images
-    script_dir = os.path.dirname(os.path.abspath(__file__))
+    # Load config and create composer
+    config = load_config(config_path)
+    composer = MultiViewComposer(config)
 
-    # Generate sample images
-    print("\nGenerating sample images...")
-    sample_dir = generate_sample_images(script_dir, num_frames=2)
-    print(f"  Created: {sample_dir}")
+    # Camera colors for visualization
+    camera_colors = {
+        "ee_cam": (50, 50, 150),
+        "ifm_camera1": (50, 150, 50),
+        "ifm_camera2": (150, 50, 50),
+        "front_monitor_cam": (50, 150, 150),
+        "back_monitor_cam": (150, 50, 150),
+        "boxwall_monitor_cam": (80, 120, 80),
+    }
 
-    try:
-        # Mock display if not showing
-        if not show_display:
-            cv2.imshow = lambda *args: None
-            cv2.waitKey = lambda *args: 0
-            cv2.destroyAllWindows = lambda: None
+    # Create synthetic images for each camera
+    print(f"\nCameras: {composer.get_camera_names()}")
+    for cam_name in composer.get_camera_names():
+        cam_config = composer.get_camera_config(cam_name)
+        if cam_config:
+            h, w = cam_config.resolution[:2]
+            color = camera_colors.get(cam_name, (100, 100, 100))
+            img = create_synthetic_image(h, w, color, cam_name)
+            composer.update_camera_image(cam_name, img, active=True)
 
-        # ============ Benchmark ============
-        print("\n[1] MultiViewComposer")
-        print("-" * 40)
+    # Status options for random selection
+    status_options = ["Stopped", "SCANNING", "NAVIGATING", "UNLOADING", "FINISHED"]
 
-        from viewer import Viewer
+    # Warm up
+    composer.update_dynamic_data(
+        laser_distance=35.0,
+        laser_active=True,
+        pressure_manifold=0.5,
+        pressure_base=0.3,
+        robot_status="Stopped",
+        is_manual_review=False,
+    )
+    _ = composer.generate_frame()
 
-        viewer = Viewer(config_path="config.yaml")
+    # Benchmark
+    print(f"\nRunning {num_frames} frames...")
+    print("-" * 40)
 
-        # Warm up
-        viewer._load_all_camera_images()
-        _ = viewer.composer.generate_frame()
+    start = time.perf_counter()
+    for i in range(num_frames):
+        # Update dynamic data with random values
+        composer.update_dynamic_data(
+            laser_distance=random.uniform(20.0, 50.0),
+            laser_active=random.random() > 0.1,
+            pressure_manifold=random.uniform(0.3, 0.8),
+            pressure_base=random.uniform(0.2, 0.5),
+            robot_status=random.choice(status_options),
+            is_manual_review=random.random() > 0.5,
+        )
+        output = composer.generate_frame()
+    elapsed = time.perf_counter() - start
 
-        # Benchmark
-        start = time.perf_counter()
-        for i in range(num_frames):
-            viewer._load_all_camera_images()
-            output = viewer.composer.generate_frame()
-        elapsed = time.perf_counter() - start
+    fps = num_frames / elapsed
+    ms_per_frame = (elapsed / num_frames) * 1000
 
-        fps = num_frames / elapsed
-        print(f"  Frames: {num_frames}")
-        print(f"  Time: {elapsed:.3f}s")
-        print(f"  FPS: {fps:.1f}")
-        print(f"  ms/frame: {(elapsed/num_frames)*1000:.2f}")
-        print(f"  Text overlays: {len(viewer.viewer_config.text_overlays)}")
-        print(f"  Layouts: {len(viewer.viewer_config.layouts)}")
+    print(f"  Frames: {num_frames}")
+    print(f"  Time: {elapsed:.3f}s")
+    print(f"  FPS: {fps:.1f}")
+    print(f"  ms/frame: {ms_per_frame:.2f}")
+    print(f"  Text overlays: {len(config.text_overlays)}")
+    print(f"  Layouts: {len(config.layouts)}")
 
-        viewer.composer.shutdown()
+    composer.shutdown()
 
-        # ============ Summary ============
-        print("\n" + "=" * 70)
-        print("RESULTS")
-        print("=" * 70)
-        print(f"\nFPS: {fps:.1f}")
-        print(f"ms/frame: {(elapsed/num_frames)*1000:.2f}")
-
-    finally:
-        # Clean up sample images
-        print("\nCleaning up sample images...")
-        cleanup_sample_images(script_dir)
-        print("  Done.")
+    # Summary
+    print("\n" + "=" * 70)
+    print("RESULTS")
+    print("=" * 70)
+    print(f"\nFPS: {fps:.1f}")
+    print(f"ms/frame: {ms_per_frame:.2f}")
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Benchmark multi_view_composer")
     parser.add_argument("-n", "--frames", type=int, default=50, help="Number of frames")
-    parser.add_argument("--display", action="store_true", help="Show display (requires X)")
+    parser.add_argument("-c", "--config", default="config.yaml", help="Config file path")
     args = parser.parse_args()
 
-    run_benchmark(args.frames, args.display)
+    run_benchmark(args.frames, args.config)

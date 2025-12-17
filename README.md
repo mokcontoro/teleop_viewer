@@ -8,8 +8,7 @@ A high-performance multi-view image composer with configurable text overlays and
 - **Fully configurable text overlays** via YAML (templates, colors, conditions)
 - **Flexible layout system** - define camera arrangements in config
 - Automatic camera filtering - only processes cameras used in layouts
-- Image caching and parallel processing for high performance
-- **On-demand sample image generation** - no static test files needed
+- High performance with parallel processing
 
 ## Installation
 
@@ -20,26 +19,15 @@ pip install -r requirements.txt
 ## Usage
 
 ```bash
-# Run the viewer (generates sample images automatically if needed)
-python viewer.py
-
-# With custom config
-python viewer.py -c config.yaml
-
 # Run example with random dynamic values
 python example.py
+
+# Run benchmark
+python benchmark.py -n 50
 ```
 
 ### Controls
 - `q` or `ESC`: Quit
-- `n`: Next frame
-
-## Benchmark
-
-Run the benchmark (automatically generates and cleans up test images):
-```bash
-python benchmark.py -n 50
-```
 
 ## Configuration
 
@@ -166,7 +154,6 @@ with SampleImageContext() as sample_dir:
 
 ```
 multi_view_composer/
-├── viewer.py                 # Main viewer application
 ├── example.py                # Example with random dynamic values
 ├── benchmark.py              # Performance benchmark
 ├── config.yaml               # Configuration file
