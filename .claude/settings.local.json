@@ -5,7 +5,9 @@
       "Bash(git commit:*)",
       "Bash(git push:*)",
       "Bash(.venvScriptspython.exe benchmark.py -n 50)",
-      "Bash(python benchmark.py:*)"
+      "Bash(python benchmark.py:*)",
+      "Bash(python -m pytest:*)",
+      "Bash(python:*)"
     ]
   }
 }
