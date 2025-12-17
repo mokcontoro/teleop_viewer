@@ -21,22 +21,20 @@ pip install -r requirements.txt
 
 ```bash
 # Run the viewer (generates sample images automatically if needed)
-python teleop_viewer_improved.py
+python viewer.py
 
 # With custom config
-python teleop_viewer_improved.py -c config.yaml
+python viewer.py -c config.yaml
+
+# Run example with random dynamic values
+python example.py
 ```
 
 ### Controls
 - `q` or `ESC`: Quit
 - `n`: Next frame
 
-## Benchmark Results
-
-| Version | FPS | ms/frame | Speedup |
-|---------|-----|----------|---------|
-| Original (`teleop_viewer.py`) | 20.5 | 48.69 | 1.0x |
-| Improved (`teleop_viewer_improved.py`) | 56.7 | 17.63 | **2.76x** |
+## Benchmark
 
 Run the benchmark (automatically generates and cleans up test images):
 ```bash
@@ -118,15 +116,7 @@ From dynamic data:
 - `{robot_status}` - string
 - `{is_manual_review}` - bool
 
-## Example
-
-Run the example script:
-
-```bash
-python -m multi_view_composer.examples.example
-```
-
-Programmatic usage:
+## Programmatic Usage
 
 ```python
 from multi_view_composer import MultiViewComposer
@@ -175,19 +165,18 @@ with SampleImageContext() as sample_dir:
 ## Project Structure
 
 ```
-teleop_viewer/
-├── teleop_viewer_improved.py     # Main viewer application
-├── multi_view_composer/          # Core image processing package
-│   ├── __init__.py
-│   ├── generator.py              # MultiViewComposer class
-│   ├── camera.py                 # Camera configurations
-│   ├── layout.py                 # Layout management
-│   ├── overlays.py               # Overlay rendering
-│   ├── config.py                 # Configuration dataclasses
-│   ├── template_engine.py        # Template rendering engine
-│   ├── sample_images.py          # Synthetic image generation
-│   └── examples/
-│       └── example.py
-├── config.yaml                   # Configuration file
-└── benchmark.py                  # Performance benchmark
+multi_view_composer/
+├── viewer.py                 # Main viewer application
+├── example.py                # Example with random dynamic values
+├── benchmark.py              # Performance benchmark
+├── config.yaml               # Configuration file
+└── multi_view_composer/      # Core package
+    ├── __init__.py
+    ├── generator.py          # MultiViewComposer class
+    ├── camera.py             # Camera configurations
+    ├── layout.py             # Layout management
+    ├── overlays.py           # Overlay rendering
+    ├── config.py             # Configuration dataclasses
+    ├── template_engine.py    # Template rendering engine
+    └── sample_images.py      # Synthetic image generation
 ```

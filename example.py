@@ -6,7 +6,7 @@ This example demonstrates how to use the MultiViewComposer
 with synthetic images (no external image files required).
 
 Usage:
-    python -m multi_view_composer.examples.example
+    python example.py
 """
 
 import cv2
@@ -33,7 +33,7 @@ def create_synthetic_image(height: int, width: int, color: tuple, label: str) ->
 
 def main():
     # Try to load config from file, or use a minimal config
-    config_path = os.path.join(os.path.dirname(__file__), "..", "..", "config.yaml")
+    config_path = os.path.join(os.path.dirname(__file__), "config.yaml")
 
     if os.path.exists(config_path):
         print(f"Loading config from: {config_path}")

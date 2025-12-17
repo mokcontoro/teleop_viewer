@@ -1,15 +1,9 @@
 #!/usr/bin/python3
 """
-Teleop Viewer - Optimized Version
+Multi-View Composer Viewer
 
-Uses the teleop_view_image_generator package for image processing.
+Uses the multi_view_composer package for image processing.
 All settings (layouts, overlays, styling) are configured via YAML config file.
-
-Benchmark Results:
-  | Version  | FPS   | ms/frame | Speedup |
-  |----------|-------|----------|---------|
-  | Original | 20.5  | 48.69    | 1.0x    |
-  | Improved | 56.7  | 17.63    | 2.76x   |
 
 Key Features:
 - Fully configurable text overlays via YAML (templates, colors, conditions)
@@ -17,11 +11,10 @@ Key Features:
 - Automatic camera filtering (only processes cameras in layout)
 - Parallel image processing with ThreadPoolExecutor
 - Image caching for file-based sources
-- Pre-compiled regex patterns for template rendering
 
 Usage:
-    python teleop_viewer_improved.py                 # Use default config.yaml
-    python teleop_viewer_improved.py -c custom.yaml  # Use custom config
+    python viewer.py                 # Use default config.yaml
+    python viewer.py -c custom.yaml  # Use custom config
 
 See config.yaml for the full configuration format.
 """
@@ -44,7 +37,7 @@ from multi_view_composer import (
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='[%(name)s] %(levelname)s: %(message)s')
-logger = logging.getLogger("Teleop Viewer")
+logger = logging.getLogger("Viewer")
 
 
 class ImageLoader:
@@ -117,17 +110,17 @@ class ImageLoader:
         return camera_name in self.camera_images and len(self.camera_images[camera_name]) > 0
 
 
-class TeleopViewer:
-    """Teleop viewer using the teleop_view_image_generator package."""
+class Viewer:
+    """Viewer using the multi_view_composer package."""
 
     def __init__(self, config_path: str = "config.yaml"):
         """
-        Initialize the teleop viewer.
+        Initialize the viewer.
 
         Args:
             config_path: Path to YAML config file (relative to script or absolute)
         """
-        self.logger = logging.getLogger("TeleopViewer")
+        self.logger = logging.getLogger("Viewer")
         self._generated_sample_images = False
         self._script_dir = os.path.dirname(os.path.abspath(__file__))
 
@@ -137,7 +130,7 @@ class TeleopViewer:
         self.viewer_config = load_viewer_config(config_path)
 
         # Initialize composer with ViewerConfig
-        self.generator = MultiViewComposer(self.viewer_config)
+        self.composer = MultiViewComposer(self.viewer_config)
 
         # Settings from config
         self.fps = self.viewer_config.fps
@@ -155,9 +148,9 @@ class TeleopViewer:
 
         self.image_loader = ImageLoader(input_dir)
 
-        # Set initial sensor values from config
+        # Set initial dynamic values from config
         sensors = self.viewer_config.sensors
-        self.generator.update_dynamic_data(
+        self.composer.update_dynamic_data(
             laser_distance=sensors.get("laser_distance", 35.0),
             laser_active=sensors.get("laser_active", True),
             pressure_manifold=sensors.get("pressure_manifold", 0.5),
@@ -170,13 +163,13 @@ class TeleopViewer:
         self.running = True
 
     def _load_all_camera_images(self):
-        """Load images from disk and feed them to the generator."""
-        for camera_name in self.generator.get_camera_names():
+        """Load images from disk and feed them to the composer."""
+        for camera_name in self.composer.get_camera_names():
             img = self.image_loader.load_image(camera_name)
             if img is not None:
-                self.generator.update_camera_image(camera_name, img, active=True)
+                self.composer.update_camera_image(camera_name, img, active=True)
             else:
-                self.generator.update_camera_image(camera_name, np.zeros((1, 1, 3), dtype=np.uint8), active=False)
+                self.composer.update_camera_image(camera_name, np.zeros((1, 1, 3), dtype=np.uint8), active=False)
 
     def run(self):
         """Main loop with OpenCV display."""
@@ -190,12 +183,12 @@ class TeleopViewer:
                 # Load all camera images from disk
                 self._load_all_camera_images()
 
-                # Generate frames using the package
-                frames = self.generator.generate_frame()
+                # Generate frames using the composer
+                frames = self.composer.generate_frame()
 
                 # Display frames
                 for idx, frame in enumerate(frames):
-                    window = self.window_name if idx == 0 else f"{self.window_name} (Vertical)"
+                    window = self.window_name if idx == 0 else f"{self.window_name} ({idx})"
                     cv2.imshow(window, frame)
 
                 self.frame_counter += 1
@@ -205,7 +198,7 @@ class TeleopViewer:
                 if key == ord('q') or key == 27:
                     self.running = False
                 elif key == ord('n'):
-                    for camera_name in self.generator.get_camera_names():
+                    for camera_name in self.composer.get_camera_names():
                         self.image_loader.advance_frame(camera_name)
 
                 # Frame rate control
@@ -219,7 +212,7 @@ class TeleopViewer:
                 self.logger.exception(f"Error: {e}")
                 break
 
-        self.generator.shutdown()
+        self.composer.shutdown()
         cv2.destroyAllWindows()
 
         # Clean up generated sample images
@@ -234,11 +227,11 @@ def main():
     """Main entry point."""
     import argparse
 
-    parser = argparse.ArgumentParser(description="Teleop Viewer - Optimized Version")
+    parser = argparse.ArgumentParser(description="Multi-View Composer Viewer")
     parser.add_argument("-c", "--config", default="config.yaml", help="Config file path")
     args = parser.parse_args()
 
-    viewer = TeleopViewer(config_path=args.config)
+    viewer = Viewer(config_path=args.config)
     viewer.run()
 
 
