@@ -1,0 +1,32 @@
+# Teleop Viewer Configuration (ROS-Independent)
+
+# Camera resolutions (height, width, channels)
+resolutions:
+  ee_cam: [480, 848, 3]
+  ifm: [800, 1280, 3]
+  monitor_cam: [720, 1280, 3]
+  recovery_cam: [530, 848, 3]
+
+# Hardware configuration
+hardware:
+  old_elbow_cam: true
+  camera_mount: "D"  # Camera mount version
+
+# Layout settings
+use_vertical: false
+
+# Input settings
+input_directory: "./sample_images"
+
+# Display settings
+fps: 10
+window_name: "Teleop Viewer"
+
+# Simulated sensor values (for overlay display)
+sensors:
+  laser_distance: 35.0  # in mm (will be displayed as cm)
+  laser_active: true
+  pressure_manifold: 0.5  # bar
+  pressure_base: 0.3  # bar
+  robot_status: "SCANNING"  # Options: Stopped, SCANNING, NAVIGATING, UNLOADING, FINISHED
+  is_manual_review: true
