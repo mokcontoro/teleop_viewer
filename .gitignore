@@ -27,3 +27,6 @@ Thumbs.db
 # Test outputs
 test_output*.jpg
 test_output*.png
+
+# Sample images (generated on demand)
+sample_images/

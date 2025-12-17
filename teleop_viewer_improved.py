@@ -35,7 +35,12 @@ import os
 import glob
 from typing import Optional, Dict, List
 
-from teleop_view_image_generator import TeleopImageGenerator, load_config as load_viewer_config
+from teleop_view_image_generator import (
+    TeleopImageGenerator,
+    load_config as load_viewer_config,
+    generate_sample_images,
+    cleanup_sample_images,
+)
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='[%(name)s] %(levelname)s: %(message)s')
@@ -123,11 +128,12 @@ class TeleopViewer:
             config_path: Path to YAML config file (relative to script or absolute)
         """
         self.logger = logging.getLogger("TeleopViewer")
+        self._generated_sample_images = False
+        self._script_dir = os.path.dirname(os.path.abspath(__file__))
 
         # Load config from YAML file
-        script_dir = os.path.dirname(os.path.abspath(__file__))
         if not os.path.isabs(config_path):
-            config_path = os.path.join(script_dir, config_path)
+            config_path = os.path.join(self._script_dir, config_path)
         self.viewer_config = load_viewer_config(config_path)
 
         # Initialize generator with ViewerConfig
@@ -137,10 +143,16 @@ class TeleopViewer:
         self.fps = self.viewer_config.fps
         self.window_name = self.viewer_config.window_name
 
-        # Initialize image loader
+        # Initialize image loader - generate sample images if needed
         input_dir = self.viewer_config.input_directory
         if not os.path.isabs(input_dir):
-            input_dir = os.path.join(script_dir, input_dir)
+            input_dir = os.path.join(self._script_dir, input_dir)
+
+        if not os.path.exists(input_dir):
+            self.logger.info("Sample images not found, generating synthetic images...")
+            generate_sample_images(self._script_dir, num_frames=2)
+            self._generated_sample_images = True
+
         self.image_loader = ImageLoader(input_dir)
 
         # Set initial sensor values from config
@@ -209,6 +221,12 @@ class TeleopViewer:
 
         self.generator.shutdown()
         cv2.destroyAllWindows()
+
+        # Clean up generated sample images
+        if self._generated_sample_images:
+            self.logger.info("Cleaning up generated sample images...")
+            cleanup_sample_images(self._script_dir)
+
         self.logger.info("Viewer stopped")
 
 

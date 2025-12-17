@@ -70,6 +70,12 @@ from .template_engine import (
     evaluate_color_rules,
     build_context,
 )
+from .sample_images import (
+    generate_sample_images,
+    cleanup_sample_images,
+    create_synthetic_image,
+    SampleImageContext,
+)
 
 __version__ = "2.0.0"
 __all__ = [
@@ -114,4 +120,9 @@ __all__ = [
     "render_template",
     "evaluate_color_rules",
     "build_context",
+    # Sample Images
+    "generate_sample_images",
+    "cleanup_sample_images",
+    "create_synthetic_image",
+    "SampleImageContext",
 ]
