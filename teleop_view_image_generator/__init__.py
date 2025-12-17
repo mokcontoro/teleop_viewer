@@ -14,7 +14,7 @@ Example usage with config file:
     generator.update_camera_image("ee_cam", cv2_image, active=True)
 
     # Update sensor data for overlays
-    generator.update_sensor_data(laser_distance=35.0, robot_status="SCANNING")
+    generator.update_dynamic_data(laser_distance=35.0, robot_status="SCANNING")
 
     # Generate output frames
     frames = generator.generate_frame()

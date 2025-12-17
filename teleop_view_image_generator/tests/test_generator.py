@@ -143,19 +143,19 @@ class TestUpdateCameraImage:
         assert cam.active is False
 
 
-class TestUpdateSensorData:
+class TestUpdateDynamicData:
     def test_updates_laser_distance(self, generator):
-        generator.update_sensor_data(laser_distance=42.0)
+        generator.update_dynamic_data(laser_distance=42.0)
 
         assert generator.sensor_data.laser_distance == 42.0
 
     def test_updates_robot_status(self, generator):
-        generator.update_sensor_data(robot_status="NAVIGATING")
+        generator.update_dynamic_data(robot_status="NAVIGATING")
 
         assert generator.sensor_data.robot_status == "NAVIGATING"
 
     def test_updates_multiple_values(self, generator):
-        generator.update_sensor_data(
+        generator.update_dynamic_data(
             laser_distance=35.0,
             laser_active=False,
             pressure_manifold=0.8,

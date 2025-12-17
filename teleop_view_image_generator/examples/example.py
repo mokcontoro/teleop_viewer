@@ -12,6 +12,8 @@ Usage:
 import cv2
 import numpy as np
 import os
+import random
+import time
 from teleop_view_image_generator import TeleopImageGenerator, load_config, ViewerConfig
 
 
@@ -101,31 +103,60 @@ def main():
             img = create_synthetic_image(h, w, color, cam_name)
             generator.update_camera_image(cam_name, img, active=True)
 
-    # Update sensor data
-    generator.update_sensor_data(
-        laser_distance=25.0,
-        laser_active=True,
-        pressure_manifold=0.45,
-        pressure_base=0.32,
-        robot_status="SCANNING",
-        is_manual_review=True,
-    )
+    # Status options for random selection
+    status_options = ["Stopped", "SCANNING", "NAVIGATING", "UNLOADING", "FINISHED"]
 
-    # Generate the output frame
-    frames = generator.generate_frame()
+    print("\nRunning demo loop with random sensor values...")
+    print("Press 'q' or ESC to quit\n")
 
-    # Display result
-    print(f"Generated {len(frames)} frame(s)")
-    print(f"Output size: {frames[0].shape[1]}x{frames[0].shape[0]} pixels")
+    frame_count = 0
+    start_time = time.time()
 
-    # Show the frame (press any key to close)
-    cv2.imshow("Teleop View Example", frames[0])
-    print("\nPress any key to close the window...")
-    cv2.waitKey(0)
+    while True:
+        # Update sensor data with random values
+        laser_distance = random.uniform(20.0, 50.0)  # mm
+        laser_active = random.random() > 0.1  # 90% chance active
+        pressure_manifold = random.uniform(0.3, 0.8)  # bar
+        pressure_base = random.uniform(0.2, 0.5)  # bar
+        robot_status = random.choice(status_options)
+        is_manual_review = random.random() > 0.5  # 50% chance
+
+        generator.update_dynamic_data(
+            laser_distance=laser_distance,
+            laser_active=laser_active,
+            pressure_manifold=pressure_manifold,
+            pressure_base=pressure_base,
+            robot_status=robot_status,
+            is_manual_review=is_manual_review,
+        )
+
+        # Generate the output frame
+        frames = generator.generate_frame()
+
+        # Display result
+        cv2.imshow("Teleop View Example", frames[0])
+
+        frame_count += 1
+
+        # Print stats every 30 frames
+        if frame_count % 30 == 0:
+            elapsed = time.time() - start_time
+            fps = frame_count / elapsed
+            print(f"Frame {frame_count}: FPS={fps:.1f} | "
+                  f"laser={laser_distance:.1f}mm | "
+                  f"status={robot_status} | "
+                  f"manual={is_manual_review}")
+
+        # Check for quit key
+        key = cv2.waitKey(33) & 0xFF  # ~30 FPS
+        if key == ord('q') or key == 27:
+            break
+
     cv2.destroyAllWindows()
 
     # Cleanup
     generator.shutdown()
+    print(f"\nDone. Rendered {frame_count} frames.")
 
 
 if __name__ == "__main__":

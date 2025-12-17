@@ -157,7 +157,7 @@ class TeleopViewer:
 
         # Set initial sensor values from config
         sensors = self.viewer_config.sensors
-        self.generator.update_sensor_data(
+        self.generator.update_dynamic_data(
             laser_distance=sensors.get("laser_distance", 35.0),
             laser_active=sensors.get("laser_active", True),
             pressure_manifold=sensors.get("pressure_manifold", 0.5),

@@ -45,7 +45,7 @@ class TeleopImageGenerator:
 
         # Update images and sensor data
         generator.update_camera_image("ee_cam", image, active=True)
-        generator.update_sensor_data(laser_distance=35.0, ...)
+        generator.update_dynamic_data(laser_distance=35.0, ...)
         frames = generator.generate_frame()
     """
 
@@ -148,7 +148,7 @@ class TeleopImageGenerator:
         cam.active = active
         return True
 
-    def update_sensor_data(
+    def update_dynamic_data(
         self,
         laser_distance: Optional[float] = None,
         laser_active: Optional[bool] = None,
