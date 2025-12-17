@@ -49,27 +49,25 @@ def run_benchmark(num_frames=50, show_display=False):
     print(f"  ms/frame: {(elapsed1/num_frames)*1000:.2f}")
 
     # ============ Benchmark Improved ============
-    print("\n[2] Improved teleop_viewer_improved.py")
+    print("\n[2] Improved teleop_viewer_improved.py (using package)")
     print("-" * 40)
-    
-    from teleop_viewer_improved import OptimizedTeleopViewer, load_config as load_config2
-    
+
+    from teleop_viewer_improved import TeleopViewer, load_config as load_config2
+
     config2 = load_config2()
-    viewer2 = OptimizedTeleopViewer(config2)
-    
+    viewer2 = TeleopViewer(config2)
+
     # Warm up
-    for name in viewer2.cameras:
-        viewer2._process_camera(name)
-    _ = viewer2._concatenate_layout(0)
-    
+    viewer2._load_all_camera_images()
+    _ = viewer2.generator.generate_frame()
+
     # Benchmark
     start = time.perf_counter()
     for i in range(num_frames):
-        for name in viewer2.cameras:
-            viewer2._process_camera(name)
-        output2 = viewer2._concatenate_layout(0)
+        viewer2._load_all_camera_images()
+        output2 = viewer2.generator.generate_frame()
     elapsed2 = time.perf_counter() - start
-    
+
     fps2 = num_frames / elapsed2
     print(f"  Frames: {num_frames}")
     print(f"  Time: {elapsed2:.3f}s")
@@ -84,8 +82,8 @@ def run_benchmark(num_frames=50, show_display=False):
     print(f"  Original:  {fps1:.1f} FPS ({(elapsed1/num_frames)*1000:.2f} ms/frame)")
     print(f"  Improved:  {fps2:.1f} FPS ({(elapsed2/num_frames)*1000:.2f} ms/frame)")
     print(f"  Speedup:   {speedup:.2f}x faster")
-    
-    viewer2.executor.shutdown(wait=False)
+
+    viewer2.generator.shutdown()
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Benchmark teleop viewers")

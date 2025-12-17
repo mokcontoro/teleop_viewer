@@ -2,6 +2,8 @@
 """
 Teleop Viewer - Optimized Version
 
+Uses the teleop_view_image_generator package for image processing.
+
   | Version  | FPS   | ms/frame | Speedup |
   |----------|-------|----------|---------|
   | Original | 34.9  | 28.63    | 1.0x    |
@@ -18,8 +20,6 @@ Performance optimizations:
 8. Inlined operations - reduce function call overhead
 """
 
-
-
 from __future__ import annotations
 import cv2
 import numpy as np
@@ -28,10 +28,9 @@ import logging
 import time
 import os
 import glob
-from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass, field
-from typing import Optional, Tuple, List, Callable, Dict
-from enum import Enum
+from typing import Optional, Dict, List
+
+from teleop_view_image_generator import TeleopImageGenerator
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='[%(name)s] %(levelname)s: %(message)s')
@@ -74,41 +73,8 @@ def get_default_config() -> dict:
     }
 
 
-# Load configuration
-CONFIG = load_config()
-
-# Extract resolution tuples
-ee_cam_resolution = tuple(CONFIG["resolutions"]["ee_cam"])
-ifm_resolution = tuple(CONFIG["resolutions"]["ifm"])
-monitor_cam_resolution = tuple(CONFIG["resolutions"]["monitor_cam"])
-recovery_cam_resolution = tuple(CONFIG["resolutions"]["recovery_cam"])
-
-# Hardware configuration
-old_elbow_cam = CONFIG["hardware"]["old_elbow_cam"]
-camera_mount = CONFIG["hardware"]["camera_mount"]
-
-
-@dataclass
-class CameraConfig:
-    """Camera configuration with pre-computed values."""
-    name: str
-    resolution: Tuple[int, int, int]
-    rotate: Optional[int]
-    centermark: bool
-    has_overlays: bool
-    overlay_types: List[str] = field(default_factory=list)
-
-    # Pre-computed target sizes for each layout
-    target_sizes: List[Tuple[int, int]] = field(default_factory=list)
-
-    # Cached data
-    cached_image: Optional[np.ndarray] = None
-    cached_resized: List[Optional[np.ndarray]] = field(default_factory=list)
-    active: bool = False
-
-
-class OptimizedImageLoader:
-    """Optimized image loader with caching."""
+class ImageLoader:
+    """Image loader with caching for file-based image sources."""
 
     __slots__ = ['input_directory', 'camera_images', 'camera_indices', 'image_cache']
 
@@ -116,7 +82,7 @@ class OptimizedImageLoader:
         self.input_directory = input_directory
         self.camera_images: Dict[str, List[str]] = {}
         self.camera_indices: Dict[str, int] = {}
-        self.image_cache: Dict[str, np.ndarray] = {}  # Cache decoded images
+        self.image_cache: Dict[str, np.ndarray] = {}
         self._scan_directories()
 
     def _scan_directories(self):
@@ -141,8 +107,8 @@ class OptimizedImageLoader:
                     self.camera_indices[camera_name] = 0
                     logger.info(f"Found {len(image_files)} images for {camera_name}")
 
-    def load_image_cv2(self, camera_name: str) -> Optional[np.ndarray]:
-        """Load image directly as cv2 BGR array with caching."""
+    def load_image(self, camera_name: str) -> Optional[np.ndarray]:
+        """Load image as BGR array with caching."""
         if camera_name not in self.camera_images:
             return None
 
@@ -164,7 +130,7 @@ class OptimizedImageLoader:
         return img
 
     def advance_frame(self, camera_name: str) -> bool:
-        """Advance to next frame."""
+        """Advance to next frame. Returns True if looped back to start."""
         if camera_name not in self.camera_images:
             return False
         images = self.camera_images[camera_name]
@@ -177,308 +143,70 @@ class OptimizedImageLoader:
         return camera_name in self.camera_images and len(self.camera_images[camera_name]) > 0
 
 
-class OptimizedTeleopViewer:
-    """Optimized teleop viewer with pre-computed layout and parallel processing."""
+class TeleopViewer:
+    """Teleop viewer using the teleop_view_image_generator package."""
 
     def __init__(self, config: dict = None):
-        self.logger = logging.getLogger("OptimizedTeleopViewer")
-        self.config = config or CONFIG
+        self.logger = logging.getLogger("TeleopViewer")
+        self.config = config or load_config()
 
         # Settings
-        self.use_vertical = self.config.get("use_vertical", False)
         self.fps = self.config.get("fps", 10)
         self.window_name = self.config.get("window_name", "Teleop Viewer")
-        self.num_layouts = 2 if self.use_vertical else 1
+        self.use_vertical = self.config.get("use_vertical", False)
+
+        # Initialize the image generator from the package
+        self.generator = TeleopImageGenerator(self.config)
 
         # Initialize image loader
         input_dir = self.config.get("input_directory", "./sample_images")
         script_dir = os.path.dirname(os.path.abspath(__file__))
         if not os.path.isabs(input_dir):
             input_dir = os.path.join(script_dir, input_dir)
-        self.image_loader = OptimizedImageLoader(input_dir)
+        self.image_loader = ImageLoader(input_dir)
 
-        # Sensor values (simulated)
+        # Set initial sensor values from config
         sensors = self.config.get("sensors", {})
-        self.laser_distance = sensors.get("laser_distance", 35.0)
-        self.pressure_manifold = sensors.get("pressure_manifold", 0.5)
-        self.pressure_base = sensors.get("pressure_base", 0.3)
-        self.laser_sensor_active = sensors.get("laser_active", True)
-        self.robot_status = sensors.get("robot_status", "Stopped")
-        self.is_manual_review_mode = sensors.get("is_manual_review", True)
-
-        # Initialize cameras
-        self._init_cameras()
-
-        # Pre-compute layout
-        self._compute_layout()
-
-        # Pre-allocate output buffer
-        self.output_buffers: List[np.ndarray] = []
-
-        # Thread pool for parallel processing
-        self.executor = ThreadPoolExecutor(max_workers=4)
+        self.generator.update_sensor_data(
+            laser_distance=sensors.get("laser_distance", 35.0),
+            laser_active=sensors.get("laser_active", True),
+            pressure_manifold=sensors.get("pressure_manifold", 0.5),
+            pressure_base=sensors.get("pressure_base", 0.3),
+            robot_status=sensors.get("robot_status", "Stopped"),
+            is_manual_review=sensors.get("is_manual_review", True),
+        )
 
         self.frame_counter = 0
         self.running = True
 
-    def _init_cameras(self):
-        """Initialize camera configurations."""
-        def rotate_tuple(x):
-            return (x[1], x[0], x[2])
-
-        self.cameras: Dict[str, CameraConfig] = {}
-
-        camera_configs = [
-            ("ee_cam", ee_cam_resolution, None, True, False, []),
-            ("ifm_camera1", ifm_resolution if camera_mount == "D" else recovery_cam_resolution,
-             None, False, False, []),
-            ("ifm_camera2", ifm_resolution,
-             cv2.ROTATE_90_COUNTERCLOCKWISE if old_elbow_cam else None, False, True, ["laser"]),
-            ("front_monitor_cam", monitor_cam_resolution,
-             cv2.ROTATE_90_COUNTERCLOCKWISE, False, True, ["status", "pressure"]),
-            ("back_monitor_cam", monitor_cam_resolution,
-             cv2.ROTATE_90_CLOCKWISE if old_elbow_cam else None, False, True, ["status", "pressure", "laser"]),
-            ("A1_cam1", ee_cam_resolution, cv2.ROTATE_90_CLOCKWISE, False, False, []),
-            ("A1_cam2", ee_cam_resolution, cv2.ROTATE_90_COUNTERCLOCKWISE, False, False, []),
-            ("boxwall_monitor_cam", monitor_cam_resolution, None, False, False, []),
-        ]
-
-        for name, resolution, rotate, centermark, has_overlays, overlay_types in camera_configs:
-            # Compute effective resolution after rotation
-            if rotate is not None:
-                effective_res = rotate_tuple(resolution)
+    def _load_all_camera_images(self):
+        """Load images from disk and feed them to the generator."""
+        for camera_name in self.generator.get_camera_names():
+            img = self.image_loader.load_image(camera_name)
+            if img is not None:
+                self.generator.update_camera_image(camera_name, img, active=True)
             else:
-                effective_res = resolution
-
-            self.cameras[name] = CameraConfig(
-                name=name,
-                resolution=resolution,
-                rotate=rotate,
-                centermark=centermark,
-                has_overlays=has_overlays,
-                overlay_types=overlay_types,
-                target_sizes=[effective_res[:2]] * self.num_layouts,
-                cached_resized=[None] * self.num_layouts,
-                active=self.image_loader.has_images(name),
-            )
-
-    def _compute_layout(self):
-        """Pre-compute the layout structure for fast concatenation."""
-        # Define the horizontal layout concatenation order
-        # This flattens the tree into a sequence of operations
-
-        # Layout:
-        # [ee_cam + boxwall + ifm_camera1] vertically stacked
-        # then horizontally with ifm_camera2
-        # then horizontally with [front_monitor_cam + back_monitor_cam]
-
-        self.layout_ops = []
-
-        # For horizontal layout (tree_index=0), compute target sizes
-        # Start with base sizes and adjust for concatenation
-        self._adjust_sizes_for_layout(0)
-
-        if self.use_vertical:
-            self._adjust_sizes_for_layout(1)
-
-    def _adjust_sizes_for_layout(self, tree_index: int):
-        """Adjust camera sizes to fit together in the layout."""
-        # Simplified size adjustment - in production, this would match the tree logic
-        # For now, we keep original sizes which may cause slight misalignment
-        pass
-
-    def _process_camera(self, name: str) -> bool:
-        """Process a single camera image. Returns True if successful."""
-        cam = self.cameras.get(name)
-        if cam is None:
-            return False
-
-        # Load image (uses cache)
-        img = self.image_loader.load_image_cv2(name)
-        if img is None:
-            cam.active = False
-            return False
-
-        cam.active = True
-        cam.cached_image = img
-
-        # Process for each layout
-        for tree_index in range(self.num_layouts):
-            target_h, target_w = cam.target_sizes[tree_index][:2]
-
-            # Compute resize dimensions (before rotation)
-            if cam.rotate is not None:
-                resize_w, resize_h = target_h, target_w
-            else:
-                resize_w, resize_h = target_w, target_h
-
-            # Resize with fast interpolation
-            if img.shape[:2] != (resize_h, resize_w):
-                resized = cv2.resize(img, (resize_w, resize_h), interpolation=cv2.INTER_LINEAR)
-            else:
-                resized = img
-
-            # Rotate if needed
-            if cam.rotate is not None:
-                resized = cv2.rotate(resized, cam.rotate)
-
-            # Draw overlays directly on the image (in-place)
-            self._draw_overlays_fast(resized, cam, tree_index)
-
-            # Draw border
-            cv2.rectangle(resized, (0, 0), (resized.shape[1]-1, resized.shape[0]-1), (255, 255, 255), 1)
-
-            cam.cached_resized[tree_index] = resized
-
-        return True
-
-    def _draw_overlays_fast(self, img: np.ndarray, cam: CameraConfig, tree_index: int):
-        """Draw overlays directly on image (in-place, no extra allocations)."""
-        h, w = img.shape[:2]
-
-        # Centermark
-        if cam.centermark:
-            cx, cy = w // 2, h // 2
-            size = int(w * 0.025)
-            cv2.line(img, (cx - size, cy), (cx + size, cy), (255, 0, 255), 4)
-            cv2.line(img, (cx, cy - size), (cx, cy + size), (255, 0, 255), 4)
-
-        # Text overlays
-        if not cam.has_overlays:
-            return
-
-        font = cv2.FONT_HERSHEY_SIMPLEX
-
-        if "status" in cam.overlay_types and cam.name == "back_monitor_cam" and tree_index == 0:
-            # Robot status
-            text = f"Status: {self.robot_status}"
-            if self.robot_status == "SCANNING":
-                text += " (Manual)" if self.is_manual_review_mode else " (Auto)"
-                color = (51, 153, 255) if self.is_manual_review_mode else (255, 128, 0)
-            elif self.robot_status in ("NAVIGATING", "UNLOADING", "FINISHED"):
-                color = (255, 128, 0)
-            else:
-                color = (0, 0, 255)
-
-            cv2.rectangle(img, (0, 0), (w, 40), (0, 0, 0), -1)
-            cv2.putText(img, text, (5, 30), font, 0.8, color, 2, cv2.LINE_AA)
-
-        if "laser" in cam.overlay_types and cam.name == "back_monitor_cam" and tree_index == 0:
-            # Laser distance
-            dist_cm = self.laser_distance * 0.1
-            if not self.laser_sensor_active:
-                text = "Laser: N/A"
-                color = (0, 0, 255)
-            elif dist_cm > 44:
-                text = "Dist: N/A"
-                color = (0, 0, 255)
-            elif dist_cm > 31:
-                text = f"Dist: {dist_cm:.2f}cm"
-                color = (255, 0, 0)
-            else:
-                text = f"Dist: {dist_cm:.2f}cm"
-                color = (0, 255, 0)
-
-            cv2.rectangle(img, (0, 40), (w, 80), (0, 0, 0), -1)
-            cv2.putText(img, text, (5, 70), font, 0.8, color, 2, cv2.LINE_AA)
-
-        if "pressure" in cam.overlay_types and cam.name == "back_monitor_cam" and tree_index == 0:
-            # Vacuum pressure
-            text = f"Z1: {self.pressure_manifold:.4f} bar | Z2: {self.pressure_base:.4f} bar"
-            cv2.rectangle(img, (0, 80), (w, 120), (0, 0, 0), -1)
-            cv2.putText(img, text, (5, 110), font, 0.7, (255, 128, 0), 2, cv2.LINE_AA)
-
-    def _concatenate_layout(self, tree_index: int) -> np.ndarray:
-        """Concatenate all camera images into final layout."""
-        # Get cached resized images
-        def get_img(name: str) -> np.ndarray:
-            cam = self.cameras.get(name)
-            if cam and cam.active and cam.cached_resized[tree_index] is not None:
-                return cam.cached_resized[tree_index]
-            # Return black placeholder
-            h, w = cam.target_sizes[tree_index][:2] if cam else (480, 640)
-            return np.zeros((h, w, 3), dtype=np.uint8)
-
-        # Build layout using cv2 concatenation (optimized C++ implementation)
-        ee = get_img("ee_cam")
-        boxwall = get_img("boxwall_monitor_cam")
-        ifm1 = get_img("ifm_camera1")
-        ifm2 = get_img("ifm_camera2")
-        front = get_img("front_monitor_cam")
-        back = get_img("back_monitor_cam")
-
-        # Vertical stack: boxwall on top of ifm1
-        boxwall_ifm1 = self._vconcat_resize(boxwall, ifm1)
-
-        # Vertical stack: ee on top of boxwall_ifm1
-        left_col = self._vconcat_resize(ee, boxwall_ifm1)
-
-        # Horizontal: left_col with ifm2
-        left_section = self._hconcat_resize(left_col, ifm2)
-
-        # Horizontal: front and back monitors
-        monitors = self._hconcat_resize(front, back)
-
-        # Final horizontal concatenation
-        result = self._hconcat_resize(left_section, monitors)
-
-        return result
-
-    def _vconcat_resize(self, img1: np.ndarray, img2: np.ndarray) -> np.ndarray:
-        """Vertically concatenate images, resizing to match widths."""
-        h1, w1 = img1.shape[:2]
-        h2, w2 = img2.shape[:2]
-
-        if w1 != w2:
-            # Resize the wider one to match
-            if w1 > w2:
-                scale = w2 / w1
-                img1 = cv2.resize(img1, (w2, int(h1 * scale)), interpolation=cv2.INTER_LINEAR)
-            else:
-                scale = w1 / w2
-                img2 = cv2.resize(img2, (w1, int(h2 * scale)), interpolation=cv2.INTER_LINEAR)
-
-        return cv2.vconcat([img1, img2])
-
-    def _hconcat_resize(self, img1: np.ndarray, img2: np.ndarray) -> np.ndarray:
-        """Horizontally concatenate images, resizing to match heights."""
-        h1, w1 = img1.shape[:2]
-        h2, w2 = img2.shape[:2]
-
-        if h1 != h2:
-            # Resize the taller one to match
-            if h1 > h2:
-                scale = h2 / h1
-                img1 = cv2.resize(img1, (int(w1 * scale), h2), interpolation=cv2.INTER_LINEAR)
-            else:
-                scale = h1 / h2
-                img2 = cv2.resize(img2, (int(w2 * scale), h1), interpolation=cv2.INTER_LINEAR)
-
-        return cv2.hconcat([img1, img2])
+                self.generator.update_camera_image(camera_name, np.zeros((1, 1, 3), dtype=np.uint8), active=False)
 
     def run(self):
         """Main loop with OpenCV display."""
         frame_time = 1.0 / self.fps
-        self.logger.info(f"Starting optimized viewer at {self.fps} FPS. Press 'q' or ESC to quit.")
-
-        # Warm up - process first frame
-        camera_names = list(self.cameras.keys())
+        self.logger.info(f"Starting viewer at {self.fps} FPS. Press 'q' or ESC to quit.")
 
         while self.running:
             start_time = time.perf_counter()
 
             try:
-                # Process all cameras in parallel
-                futures = [self.executor.submit(self._process_camera, name) for name in camera_names]
-                for f in futures:
-                    f.result()  # Wait for completion
+                # Load all camera images from disk
+                self._load_all_camera_images()
 
-                # Concatenate and display
-                for tree_index in range(self.num_layouts):
-                    output = self._concatenate_layout(tree_index)
+                # Generate frames using the package
+                frames = self.generator.generate_frame()
 
-                    window = self.window_name if tree_index == 0 else f"{self.window_name} (Vertical)"
-                    cv2.imshow(window, output)
+                # Display frames
+                for idx, frame in enumerate(frames):
+                    window = self.window_name if idx == 0 else f"{self.window_name} (Vertical)"
+                    cv2.imshow(window, frame)
 
                 self.frame_counter += 1
 
@@ -487,8 +215,8 @@ class OptimizedTeleopViewer:
                 if key == ord('q') or key == 27:
                     self.running = False
                 elif key == ord('n'):
-                    for name in camera_names:
-                        self.image_loader.advance_frame(name)
+                    for camera_name in self.generator.get_camera_names():
+                        self.image_loader.advance_frame(camera_name)
 
                 # Frame rate control
                 elapsed = time.perf_counter() - start_time
@@ -501,7 +229,7 @@ class OptimizedTeleopViewer:
                 self.logger.exception(f"Error: {e}")
                 break
 
-        self.executor.shutdown(wait=False)
+        self.generator.shutdown()
         cv2.destroyAllWindows()
         self.logger.info("Viewer stopped")
 
@@ -522,7 +250,7 @@ def main():
     if args.fps:
         config["fps"] = args.fps
 
-    viewer = OptimizedTeleopViewer(config)
+    viewer = TeleopViewer(config)
     viewer.run()
 
 
