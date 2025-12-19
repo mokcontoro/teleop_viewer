@@ -15,7 +15,6 @@ A high-performance multi-view image composer with configurable text overlays and
 ## Installation
 
 ```bash
-# Or install from git
 pip install git+https://github.com/mokcontoro/multi_view_composer.git
 ```
 
