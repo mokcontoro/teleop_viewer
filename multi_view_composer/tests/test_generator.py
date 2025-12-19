@@ -151,9 +151,8 @@ class TestUpdateDynamicData:
     def test_updates_custom_data(self, composer):
         composer.update_dynamic_data(temperature=42.0, my_value=100)
 
-        data = composer.sensor_data.to_dict()
-        assert data["temperature"] == 42.0
-        assert data["my_value"] == 100
+        assert composer.dynamic_data["temperature"] == 42.0
+        assert composer.dynamic_data["my_value"] == 100
 
     def test_updates_multiple_values(self, composer):
         composer.update_dynamic_data(
@@ -163,11 +162,10 @@ class TestUpdateDynamicData:
             status="running"
         )
 
-        data = composer.sensor_data.to_dict()
-        assert data["speed"] == 35.0
-        assert data["active"] is False
-        assert data["level"] == 80
-        assert data["status"] == "running"
+        assert composer.dynamic_data["speed"] == 35.0
+        assert composer.dynamic_data["active"] is False
+        assert composer.dynamic_data["level"] == 80
+        assert composer.dynamic_data["status"] == "running"
 
 
 class TestGenerateFrame:

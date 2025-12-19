@@ -4,10 +4,10 @@ from __future__ import annotations
 import cv2
 import numpy as np
 from concurrent.futures import ThreadPoolExecutor
-from typing import Optional, List, Dict, Tuple, Union, Set
+from typing import Optional, List, Dict, Tuple, Union, Set, Any
 
 from .camera import CameraConfig, create_camera_configs
-from .overlays import SensorData, draw_camera_overlays, draw_border
+from .overlays import draw_camera_overlays, draw_border
 from .layout import LayoutManager, create_placeholder
 from .config import ViewerConfig, load_config, LayoutNodeConfig, CameraDefinition
 from .logging_config import get_logger
@@ -44,8 +44,8 @@ class MultiViewComposer:
         composer = MultiViewComposer(config)
 
         # Update images and dynamic data
-        composer.update_camera_image("ee_cam", image, active=True)
-        composer.update_dynamic_data(laser_distance=35.0, ...)
+        composer.update_camera_image("cam1", image, active=True)
+        composer.update_dynamic_data(temperature=25.5, speed=10.0)
         frames = composer.generate_frame()
     """
 
@@ -119,8 +119,8 @@ class MultiViewComposer:
                 if computed_size != (480, 640):
                     cam.target_sizes[tree_index] = computed_size
 
-        # Sensor data for overlays
-        self.sensor_data = SensorData()
+        # Dynamic data for overlay templates
+        self.dynamic_data: Dict[str, Any] = {}
 
         # Thread pool for parallel processing
         self.executor = ThreadPoolExecutor(max_workers=4)
@@ -156,31 +156,16 @@ class MultiViewComposer:
 
     def update_dynamic_data(self, **kwargs) -> None:
         """
-        Update sensor values for overlays.
+        Update dynamic data for overlay templates.
 
-        Accepts any keyword arguments. Predefined fields are:
-            laser_distance: Laser distance in mm
-            laser_active: Whether laser sensor is active
-            pressure_manifold: Manifold pressure in bar
-            pressure_base: Base pressure in bar
-            robot_status: Robot status string
-            is_manual_review: Whether in manual review mode
+        Accepts any keyword arguments. Values are available in templates
+        as {variable_name}.
 
-        Any other keyword arguments are stored as custom sensor data
-        and can be used in overlay templates.
+        Example:
+            composer.update_dynamic_data(temperature=25.5, speed=10.0, mode="auto")
+            # In config: template: "Temp: {temperature:.1f}C"
         """
-        # Predefined fields
-        predefined = {
-            'laser_distance', 'laser_active', 'pressure_manifold',
-            'pressure_base', 'robot_status', 'is_manual_review'
-        }
-
-        for key, value in kwargs.items():
-            if value is not None:
-                if key in predefined:
-                    setattr(self.sensor_data, key, value)
-                else:
-                    self.sensor_data.set(key, value)
+        self.dynamic_data.update(kwargs)
 
     def _process_camera(self, camera_name: str) -> bool:
         """
@@ -228,7 +213,7 @@ class MultiViewComposer:
             draw_camera_overlays(
                 processed,
                 cam.name,
-                self.sensor_data,
+                self.dynamic_data,
                 self.config,
                 tree_index,
                 cam.centermark

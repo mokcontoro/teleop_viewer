@@ -22,7 +22,7 @@ Example usage:
 
 from .generator import MultiViewComposer
 from .camera import CameraConfig, create_camera_configs
-from .overlays import SensorData, draw_centermark, draw_camera_overlays, draw_border
+from .overlays import draw_centermark, draw_camera_overlays, draw_border
 from .layout import (
     LayoutManager,
     LayoutNode,
@@ -65,7 +65,6 @@ __all__ = [
     "CameraDefinition",
     "create_camera_configs",
     # Overlays
-    "SensorData",
     "draw_centermark",
     "draw_camera_overlays",
     "draw_border",

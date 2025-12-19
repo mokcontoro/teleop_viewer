@@ -3,7 +3,7 @@
 import pytest
 import numpy as np
 
-from multi_view_composer import SensorData, draw_centermark, draw_border
+from multi_view_composer import draw_centermark, draw_border
 from multi_view_composer.config import CentermarkConfig, BorderConfig
 
 
@@ -11,44 +11,6 @@ from multi_view_composer.config import CentermarkConfig, BorderConfig
 def sample_image():
     """Create a sample 480x640 BGR image."""
     return np.zeros((480, 640, 3), dtype=np.uint8)
-
-
-@pytest.fixture
-def sensor_data():
-    """Create sample sensor data."""
-    data = SensorData()
-    data.set("temperature", 25.0)
-    data.set("level", 75)
-    data.set("active", True)
-    return data
-
-
-class TestSensorData:
-    def test_default_values(self):
-        data = SensorData()
-        d = data.to_dict()
-
-        # Default predefined values
-        assert d["laser_distance"] == 35.0
-        assert d["laser_active"] is True
-
-    def test_set_custom_value(self):
-        data = SensorData()
-        data.set("temperature", 30.0)
-        data.set("mode", "auto")
-
-        d = data.to_dict()
-        assert d["temperature"] == 30.0
-        assert d["mode"] == "auto"
-
-    def test_cache_key_includes_custom(self):
-        data1 = SensorData()
-        data2 = SensorData()
-
-        data1.set("temp", 25.0)
-        data2.set("temp", 30.0)
-
-        assert data1.cache_key() != data2.cache_key()
 
 
 class TestDrawCentermark:

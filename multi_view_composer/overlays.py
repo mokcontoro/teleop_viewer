@@ -1,10 +1,9 @@
-"""Overlay rendering for teleop viewer images with configurable templates."""
+"""Overlay rendering for multi-view composer with configurable templates."""
 
 import cv2
 import numpy as np
 import threading
-from dataclasses import dataclass, asdict
-from typing import Optional, Dict, Any, Tuple, List
+from typing import Dict, Any, Tuple
 
 from .config import (
     ViewerConfig, TextOverlayConfig, OverlayStyle,
@@ -20,7 +19,7 @@ logger = get_logger("overlays")
 
 
 # Thread-safe cache for rendered overlay text and colors
-# Key: (overlay_id, sensor_cache_key) -> (text, color, visible)
+# Key: (overlay_id, data_cache_key) -> (text, color, visible)
 _overlay_cache: Dict[Tuple[str, tuple], Tuple[str, Tuple[int, int, int], bool]] = {}
 _cache_lock = threading.Lock()
 
@@ -38,47 +37,9 @@ FONT_MAP = {
 }
 
 
-@dataclass
-class SensorData:
-    """Sensor data for overlays. Supports both predefined and custom fields."""
-    laser_distance: float = 35.0  # mm
-    laser_active: bool = True
-    pressure_manifold: float = 0.5  # bar
-    pressure_base: float = 0.3  # bar
-    robot_status: str = "Stopped"
-    is_manual_review: bool = False
-
-    # Extra fields for custom sensor data
-    _extra: Dict[str, Any] = None
-
-    def __post_init__(self):
-        if self._extra is None:
-            self._extra = {}
-
-    def set(self, key: str, value: Any) -> None:
-        """Set a custom sensor value."""
-        self._extra[key] = value
-
-    def to_dict(self) -> Dict[str, Any]:
-        """Convert to dictionary for template context."""
-        result = asdict(self)
-        result.pop('_extra', None)  # Remove internal field
-        result.update(self._extra)  # Add custom fields
-        return result
-
-    def cache_key(self) -> tuple:
-        """Return a hashable key for caching overlay results."""
-        # Include extra fields in cache key (sorted for consistency)
-        extra_items = tuple(sorted(self._extra.items())) if self._extra else ()
-        return (
-            self.laser_distance,
-            self.laser_active,
-            self.pressure_manifold,
-            self.pressure_base,
-            self.robot_status,
-            self.is_manual_review,
-            extra_items,
-        )
+def make_cache_key(data: Dict[str, Any]) -> tuple:
+    """Create a hashable cache key from a dictionary."""
+    return tuple(sorted(data.items()))
 
 
 def get_cv_font(font_name: str) -> int:
@@ -285,7 +246,7 @@ def draw_border(
 def draw_camera_overlays(
     img: np.ndarray,
     camera_name: str,
-    sensor_data: SensorData,
+    dynamic_data: Dict[str, Any],
     config: ViewerConfig,
     tree_index: int = 0,
     draw_centermark_flag: bool = False
@@ -296,7 +257,7 @@ def draw_camera_overlays(
     Args:
         img: BGR image to draw on (modified in-place)
         camera_name: Name of the camera
-        sensor_data: SensorData object with current values
+        dynamic_data: Dictionary of dynamic values for templates
         config: ViewerConfig with overlay settings
         tree_index: Layout index (overlays only on index 0)
         draw_centermark_flag: Whether to draw centermark
@@ -309,11 +270,8 @@ def draw_camera_overlays(
     if tree_index != 0:
         return
 
-    # Convert sensor data to dict
-    sensor_dict = sensor_data.to_dict()
-
     # Get cache key for caching template rendering
-    cache_key = sensor_data.cache_key()
+    cache_key = make_cache_key(dynamic_data)
 
     y_offset = 0
 
@@ -323,7 +281,7 @@ def draw_camera_overlays(
             y_offset = draw_text_overlay(
                 img,
                 overlay,
-                sensor_dict,
+                dynamic_data,
                 y_offset,
                 config.default_overlay_style,
                 cache_key
