@@ -295,7 +295,3 @@ from multi_view_composer import (
     setup_logging, get_logger,
 )
 ```
-
-## License
-
-MIT
