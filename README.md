@@ -15,14 +15,8 @@ A high-performance multi-view image composer with configurable text overlays and
 ## Installation
 
 ```bash
-# Install from local path
-pip install /path/to/multi_view_composer
-
-# Or install in development mode
-pip install -e /path/to/multi_view_composer
-
 # Or install from git
-pip install git+https://github.com/user/multi_view_composer.git
+pip install git+https://github.com/mokcontoro/multi_view_composer.git
 ```
 
 ## Quick Start
