@@ -4,7 +4,7 @@ from __future__ import annotations
 import cv2
 import numpy as np
 from concurrent.futures import ThreadPoolExecutor
-from typing import Optional, List, Dict, Union, Set, Any
+from typing import Optional, List, Dict, Tuple, Union, Set, Any
 
 from .camera import CameraConfig, create_camera_configs
 from .overlays import draw_camera_overlays, draw_border
@@ -49,7 +49,12 @@ class MultiViewComposer:
         frames = composer.generate_frame()
     """
 
-    def __init__(self, config: Union[ViewerConfig, str]):
+    def __init__(
+        self,
+        config: Union[ViewerConfig, str],
+        output_size: Optional[Tuple[int, int]] = None,
+        max_workers: int = 4,
+    ):
         """
         Initialize the image generator.
 
@@ -57,6 +62,19 @@ class MultiViewComposer:
             config: Configuration - either:
                 - ViewerConfig: Config object with full overlay/layout settings
                 - str: Path to YAML config file
+            output_size: Optional (height, width) constraint for the final
+                concatenated mosaic. When provided, the layout tree is uniformly
+                rescaled so generate_frame() emits images at this size directly,
+                eliminating the need for a downstream resize. Per-camera target
+                tile sizes shrink proportionally; overlay coordinates and font
+                scales may need retuning when the new tile size differs
+                materially from the natural layout size.
+            max_workers: Worker count for the per-camera processing thread pool.
+                The default of 4 is fine when OpenCV is single-threaded
+                internally. Reduce to 1 or 2 when the underlying OpenCV build
+                is multithreaded (and cv2.setNumThreads has not been clamped)
+                to avoid CPU oversubscription on hosts that run several
+                CV-heavy containers.
         """
         self._logger = get_logger("generator")
 
@@ -112,6 +130,7 @@ class MultiViewComposer:
             camera_sizes,
             layout_configs=self.config.layouts,
             active_layout=self.config.active_layout,
+            output_size=output_size,
         )
 
         # Update camera target_sizes from computed layout
@@ -125,7 +144,7 @@ class MultiViewComposer:
         self.dynamic_data: Dict[str, Any] = {}
 
         # Thread pool for parallel processing
-        self.executor = ThreadPoolExecutor(max_workers=4)
+        self.executor = ThreadPoolExecutor(max_workers=max_workers)
 
         self._logger.info(
             f"Initialized with {len(self.cameras)} cameras, "
