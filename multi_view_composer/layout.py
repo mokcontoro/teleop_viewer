@@ -356,6 +356,7 @@ class LayoutManager:
         camera_sizes: Dict[str, Tuple[int, int]],
         layout_configs: Dict[str, LayoutNodeConfig],
         active_layout: str = "horizontal",
+        output_size: Optional[Tuple[int, int]] = None,
     ):
         """
         Initialize layout manager.
@@ -364,6 +365,11 @@ class LayoutManager:
             camera_sizes: Dict mapping camera name to (height, width) after rotation
             layout_configs: Dict of layout configs from YAML
             active_layout: Name of the active layout
+            output_size: Optional (height, width) constraint for the final mosaic.
+                When provided, the natural layout is uniformly rescaled so the
+                concatenated output matches this size. All per-camera target
+                sizes are propagated through the layout tree. This avoids
+                composing a larger mosaic and shrinking it after the fact.
         """
         self.layout_names = list(layout_configs.keys())
         self.num_layouts = len(self.layout_names)
@@ -376,6 +382,14 @@ class LayoutManager:
             self.roots[i], self.target_sizes[i] = compute_layout_from_config(
                 layout_configs[name], camera_sizes
             )
+
+        # Constrain final mosaic size if requested.
+        if output_size is not None:
+            target_h, target_w = output_size
+            for i in range(self.num_layouts):
+                root = self.roots[i]
+                if root is not None:
+                    root.resize(target_h, target_w, self.target_sizes[i])
 
         # Set active layout index
         self.active_layout_index = 0

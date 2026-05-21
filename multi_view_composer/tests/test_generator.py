@@ -183,6 +183,43 @@ class TestGenerateFrame:
         assert frames[0] is not None
 
 
+class TestOutputSize:
+    def test_default_uses_natural_layout(self):
+        config = create_test_config()
+        comp = MultiViewComposer(config)
+        sample = np.ones((480, 640, 3), dtype=np.uint8) * 128
+        comp.update_camera_image("cam1", sample, active=True)
+        comp.update_camera_image("cam2", sample, active=True)
+        frames = comp.generate_frame()
+        natural_shape = frames[0].shape
+        assert natural_shape == (480, 1280, 3)
+        comp.shutdown()
+
+    def test_output_size_constrains_final_frame(self):
+        config = create_test_config()
+        comp = MultiViewComposer(config, output_size=(240, 640))
+        sample = np.ones((480, 640, 3), dtype=np.uint8) * 128
+        comp.update_camera_image("cam1", sample, active=True)
+        comp.update_camera_image("cam2", sample, active=True)
+        frames = comp.generate_frame()
+        assert frames[0].shape == (240, 640, 3)
+        comp.shutdown()
+
+    def test_output_size_propagates_to_per_camera_targets(self):
+        config = create_test_config()
+        comp = MultiViewComposer(config, output_size=(240, 640))
+        for name in ["cam1", "cam2"]:
+            target = comp.layout_manager.get_target_size(name, 0)
+            assert target == (240, 320), f"{name} target {target} != (240, 320)"
+        comp.shutdown()
+
+    def test_max_workers_param_is_honored(self):
+        config = create_test_config()
+        comp = MultiViewComposer(config, max_workers=2)
+        assert comp.executor._max_workers == 2
+        comp.shutdown()
+
+
 class TestGetCameraConfig:
     def test_returns_config_for_existing_camera(self, composer):
         config = composer.get_camera_config("cam1")
